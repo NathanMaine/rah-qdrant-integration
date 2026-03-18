@@ -43,61 +43,194 @@ RA-H OS uses SQLite for its knowledge graph, which is excellent for graph querie
 
 RA-H OS owns the graph. Qdrant owns the vectors. Both use the same source content.
 
-## Quick Start
+## Installation
 
 ### Prerequisites
-- Docker and Docker Compose
-- [Ollama](https://ollama.ai/) running with an embedding model
-- An existing RA-H OS installation (or standalone)
 
-### 1. Start Qdrant
+| Requirement | Version | Why |
+|-------------|---------|-----|
+| Python | 3.10+ | Scripts and utilities |
+| Docker | 20.10+ | Runs Qdrant container |
+| Docker Compose | v2+ | Service orchestration |
+| Git | Any | Clone this repo |
 
-```bash
-docker compose up -d
-```
+---
 
-This starts Qdrant on port 6333 with persistent storage.
-
-### 2. Configure
-
-Copy the example environment file and adjust:
+### macOS (Apple Silicon & Intel)
 
 ```bash
+# 1. Install Homebrew (if not installed)
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# 2. Install Docker Desktop
+brew install --cask docker
+# Open Docker Desktop from Applications and complete setup
+
+# 3. Install Python (if not installed)
+brew install python@3.12
+
+# 4. Install Ollama
+brew install ollama
+ollama serve &                    # Start Ollama in background
+ollama pull nomic-embed-text      # Download embedding model
+
+# 5. Clone and set up this repo
+git clone https://github.com/NathanMaine/rah-qdrant-integration.git
+cd rah-qdrant-integration
+pip3 install -r requirements.txt
 cp .env.example .env
+
+# 6. Start Qdrant
+docker compose up -d
+
+# 7. Verify everything works
+python3 examples/basic_usage.py
 ```
 
-```env
-QDRANT_URL=http://localhost:6333
-OLLAMA_URL=http://localhost:11434
-COLLECTION_NAME=rah_vectors
-EMBED_MODEL=nomic-embed-text
+---
+
+### Linux (Ubuntu/Debian)
+
+```bash
+# 1. Install Docker
+sudo apt update
+sudo apt install -y docker.io docker-compose-v2
+sudo usermod -aG docker $USER
+newgrp docker
+
+# 2. Install Python
+sudo apt install -y python3 python3-pip python3-venv
+
+# 3. Install Ollama
+curl -fsSL https://ollama.ai/install.sh | sh
+ollama serve &                    # Start Ollama in background
+ollama pull nomic-embed-text      # Download embedding model
+
+# 4. Clone and set up this repo
+git clone https://github.com/NathanMaine/rah-qdrant-integration.git
+cd rah-qdrant-integration
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+
+# 5. Start Qdrant
+docker compose up -d
+
+# 6. Verify everything works
+python3 examples/basic_usage.py
 ```
 
-### 3. Ingest Content
+**Linux ARM64 (NVIDIA DGX Spark, Jetson, Raspberry Pi):**
+Same steps as above. Both Qdrant and Ollama have native ARM64 Docker images — no changes needed.
+
+---
+
+### Windows
+
+```powershell
+# 1. Install Docker Desktop
+# Download from https://www.docker.com/products/docker-desktop/
+# Enable WSL 2 backend during installation
+# Restart your computer after installation
+
+# 2. Install Python
+# Download from https://www.python.org/downloads/
+# IMPORTANT: Check "Add Python to PATH" during installation
+
+# 3. Install Ollama
+# Download from https://ollama.ai/download/windows
+# After installation, open a terminal:
+ollama serve                          # Start Ollama (leave this terminal open)
+# In a NEW terminal:
+ollama pull nomic-embed-text          # Download embedding model
+
+# 4. Clone and set up this repo (in a new terminal)
+git clone https://github.com/NathanMaine/rah-qdrant-integration.git
+cd rah-qdrant-integration
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+copy .env.example .env
+
+# 5. Start Qdrant
+docker compose up -d
+
+# 6. Verify everything works
+python examples/basic_usage.py
+```
+
+**Windows Notes:**
+- Docker Desktop must be running before `docker compose up`
+- If you get permission errors, run your terminal as Administrator
+- Use `python` instead of `python3` on Windows
+- WSL 2 is recommended for best Docker performance
+
+---
+
+### Verify Installation
+
+After setup on any platform, verify all services are running:
+
+```bash
+# Check Qdrant is reachable
+curl http://localhost:6333/collections
+
+# Check Ollama is running
+curl http://localhost:11434/api/tags
+
+# Run the example
+python3 examples/basic_usage.py
+```
+
+Expected output:
+```
+1. Ingesting sample content...
+   Ingested 2 chunks
+
+2. Searching for 'model evaluation metrics'...
+   [0.8234] Example Expert: Machine learning models require...
+
+3. Searching with creator filter...
+   [0.8234] Example Expert: Machine learning models require...
+
+4. Collection stats: 2 points, status: green
+```
+
+---
+
+## Usage
+
+### Ingest Content
 
 ```bash
 # Ingest a directory of text files
-python qdrant_ingest.py --input /path/to/documents --creator "Source Name"
+python3 qdrant_ingest.py --input /path/to/documents --creator "Source Name"
 
 # Ingest with custom chunk size
-python qdrant_ingest.py --input /path/to/documents --creator "Source Name" --chunk-size 400 --overlap 50
+python3 qdrant_ingest.py --input /path/to/documents --creator "Source Name" --chunk-size 400 --overlap 50
 ```
 
-### 4. Search
+### Search
 
 ```bash
 # CLI search
-python qdrant_search.py "your search query"
+python3 qdrant_search.py "your search query"
 
 # Filter by creator
-python qdrant_search.py "your search query" --creator "Source Name"
+python3 qdrant_search.py "your search query" --creator "Source Name"
+
+# More results
+python3 qdrant_search.py "your search query" --limit 20
+
+# Collection stats
+python3 qdrant_search.py --stats
 ```
 
-### 5. Python API
+### Python API
 
 ```python
-from qdrant_client import QdrantClient
-from qdrant_utils import embed_text, search_vectors
+from qdrant_utils import search_vectors, upsert_chunks, chunk_text
 
 # Search
 results = search_vectors("how does attention work?", limit=10)
@@ -106,6 +239,10 @@ for r in results:
 
 # Search with creator filter
 results = search_vectors("how does attention work?", creator="Specific Expert")
+
+# Ingest text programmatically
+chunks = chunk_text("Your long document text here...", chunk_size=400, overlap=50)
+upsert_chunks(chunks, creator="My Expert", title="Document Title")
 ```
 
 ## File Structure
