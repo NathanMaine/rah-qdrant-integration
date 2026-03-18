@@ -323,13 +323,26 @@ volumes:
 
 ## Embedding Models
 
-This integration uses [Ollama](https://ollama.ai/) for local embedding generation. Install an embedding model:
+This integration uses [Ollama](https://ollama.ai/) for local embedding generation.
+
+**Recommended model: `nomic-embed-text` (v1.5)**
 
 ```bash
 ollama pull nomic-embed-text
 ```
 
-Any Ollama-compatible embedding model works. Adjust `EMBED_MODEL` in your `.env` file.
+This is currently the best open-source embedding model for its size — 768 dimensions, strong retrieval performance across MTEB benchmarks, and fast inference on CPU. Ollama pulls the latest version (v1.5) by default.
+
+Other compatible models:
+
+| Model | Dimensions | Notes |
+| ----- | ---------- | ----- |
+| `nomic-embed-text` | 768 | Recommended. Best quality/speed ratio |
+| `mxbai-embed-large` | 1024 | Higher quality, slower, more memory |
+| `all-minilm` | 384 | Fastest, lower quality |
+| `snowflake-arctic-embed` | 1024 | Strong retrieval, larger |
+
+To switch models, update `EMBED_MODEL` in `.env`. **Important:** if you switch models after ingesting data, you must re-ingest everything — embeddings from different models are incompatible.
 
 ## Compatibility
 
