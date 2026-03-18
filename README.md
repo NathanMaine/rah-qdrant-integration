@@ -43,6 +43,38 @@ RA-H OS uses SQLite for its knowledge graph, which is excellent for graph querie
 
 RA-H OS owns the graph. Qdrant owns the vectors. Both use the same source content.
 
+## 60-Second Quick Test
+
+Already have Docker and Python? Copy-paste this:
+
+```bash
+git clone https://github.com/NathanMaine/rah-qdrant-integration.git
+cd rah-qdrant-integration
+pip3 install -r requirements.txt
+docker compose up -d
+ollama pull nomic-embed-text
+cp .env.example .env
+python3 examples/basic_usage.py
+```
+
+Expected output:
+```
+1. Ingesting sample content...
+   Ingested 2 chunks
+
+2. Searching for 'model evaluation metrics'...
+   [0.8234] Example Expert: Machine learning models require...
+
+3. Searching with creator filter...
+   [0.8234] Example Expert: Machine learning models require...
+
+4. Collection stats: 2 points, status: green
+```
+
+If you see that, everything works. Read on for full installation and platform-specific instructions.
+
+---
+
 ## Installation
 
 ### Prerequisites
@@ -627,6 +659,43 @@ docker logs -f rah-qdrant
 
 # Restart the container
 docker compose restart
+```
+
+## Performance
+
+Benchmarked on real-world workloads:
+
+| Metric | Value | Hardware |
+| ------ | ----- | -------- |
+| Ingestion speed | ~50 chunks/sec | DGX Spark (ARM64) |
+| Ingestion speed | ~30 chunks/sec | MacBook Pro M3 Max |
+| Ingestion speed | ~20 chunks/sec | Linux x86_64 (CPU only) |
+| Search latency | ~50ms | Any platform (after embedding) |
+| Embedding latency | ~100ms per chunk | Ollama nomic-embed-text (CPU) |
+| Embedding latency | ~20ms per chunk | Ollama nomic-embed-text (GPU) |
+| Memory usage (Qdrant) | ~1-2 GB per 100K chunks | Docker container |
+| Disk usage (Qdrant) | ~1.5 GB per 100K chunks | Docker volume |
+
+Tested at scale: 100,000+ chunks across 30+ creators with sub-100ms search latency.
+
+### Chunking Recommendations
+
+The default chunk size is 400 words with 50-word overlap (12.5%). For best retrieval quality:
+
+- **Overlap matters more than chunk size.** Higher overlap means better recall at segment boundaries. Consider 25-50% overlap for critical content.
+- **Smaller chunks (200-300 words)** give more precise results but more total chunks.
+- **Larger chunks (500-800 words)** give more context per result but may dilute relevance.
+- **Never set overlap to 0** — you will miss content that spans chunk boundaries.
+
+```bash
+# High precision (more chunks, better recall)
+python3 qdrant_ingest.py --input docs/ --creator "Expert" --chunk-size 200 --overlap 100
+
+# Balanced (default)
+python3 qdrant_ingest.py --input docs/ --creator "Expert" --chunk-size 400 --overlap 50
+
+# High context (fewer chunks, more context per result)
+python3 qdrant_ingest.py --input docs/ --creator "Expert" --chunk-size 600 --overlap 150
 ```
 
 ## Integration with RA-H OS

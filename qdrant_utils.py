@@ -1,9 +1,14 @@
 """
 Qdrant utilities for RA-H OS integration.
 Provides embedding, search, and upsert functions.
+
+Requires:
+  - Qdrant running (default: http://localhost:6333)
+  - Ollama running with an embedding model (default: nomic-embed-text)
 """
 
 import os
+import sys
 import uuid
 import requests
 from dotenv import load_dotenv
@@ -17,30 +22,64 @@ EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
 VECTOR_DIM = 768
 
 
+def _check_service(url, name):
+    """Verify a service is reachable. Returns True or prints helpful error."""
+    try:
+        requests.get(url, timeout=3)
+        return True
+    except requests.ConnectionError:
+        print(f"\n[ERROR] Cannot connect to {name} at {url}")
+        if "6333" in url:
+            print(f"  Is Qdrant running? Try: docker compose up -d")
+        elif "11434" in url:
+            print(f"  Is Ollama running? Try: ollama serve")
+        print()
+        return False
+
+
 def ensure_collection():
     """Create the Qdrant collection if it doesn't exist."""
-    resp = requests.get(f"{QDRANT_URL}/collections/{COLLECTION}", timeout=5)
-    if resp.status_code == 200:
-        return True
-    requests.put(
-        f"{QDRANT_URL}/collections/{COLLECTION}",
-        json={
-            "vectors": {"size": VECTOR_DIM, "distance": "Cosine"},
-        },
-        timeout=10,
-    )
-    return True
+    if not _check_service(QDRANT_URL, "Qdrant"):
+        return False
+    try:
+        resp = requests.get(f"{QDRANT_URL}/collections/{COLLECTION}", timeout=5)
+        if resp.status_code == 200:
+            return True
+        resp = requests.put(
+            f"{QDRANT_URL}/collections/{COLLECTION}",
+            json={
+                "vectors": {"size": VECTOR_DIM, "distance": "Cosine"},
+            },
+            timeout=10,
+        )
+        if resp.ok:
+            print(f"Created collection '{COLLECTION}' ({VECTOR_DIM} dimensions, cosine distance)")
+        return resp.ok
+    except Exception as e:
+        print(f"[ERROR] Failed to create collection: {e}")
+        return False
 
 
 def embed_text(text: str) -> list[float]:
     """Generate an embedding vector using Ollama."""
-    resp = requests.post(
-        f"{OLLAMA_URL}/api/embeddings",
-        json={"model": EMBED_MODEL, "prompt": text},
-        timeout=30,
-    )
-    resp.raise_for_status()
-    return resp.json()["embedding"]
+    if not _check_service(OLLAMA_URL, "Ollama"):
+        sys.exit(1)
+    try:
+        resp = requests.post(
+            f"{OLLAMA_URL}/api/embeddings",
+            json={"model": EMBED_MODEL, "prompt": text},
+            timeout=30,
+        )
+        if resp.status_code == 404:
+            print(f"\n[ERROR] Embedding model '{EMBED_MODEL}' not found in Ollama.")
+            print(f"  Install it: ollama pull {EMBED_MODEL}")
+            sys.exit(1)
+        resp.raise_for_status()
+        return resp.json()["embedding"]
+    except requests.ConnectionError:
+        print(f"\n[ERROR] Lost connection to Ollama at {OLLAMA_URL}")
+        print(f"  Restart it: ollama serve")
+        sys.exit(1)
 
 
 def chunk_text(text: str, chunk_size: int = 400, overlap: int = 50) -> list[str]:
